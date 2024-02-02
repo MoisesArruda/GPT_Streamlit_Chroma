@@ -7,7 +7,7 @@ from langchain.chat_models import AzureChatOpenAI
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.prompts import PromptTemplate
 from dotenv import load_dotenv
-from langchain.text_splitter import CharacterTextSplitter
+from langchain.text_splitter import CharacterTextSplitter,RecursiveCharacterTextSplitter
 from langchain.memory import ConversationBufferMemory,FileChatMessageHistory
 from langchain.vectorstores import Chroma
 from PyPDF2 import PdfReader
@@ -38,6 +38,7 @@ class GPTConfig:
         self.openai_api_type = os.getenv("OPENAI_API_TYPE")
         self.deployment_name = os.getenv("DEPLOYMENT_NAME")
         self.deployment = os.getenv("EMBEDDING_DEPLOYMENT_NAME")
+        self.max_tokens=7000
 
     def create_chat(self,t=0.1):
         """
@@ -53,6 +54,7 @@ class GPTConfig:
                 openai_api_type=self.openai_api_type,
                 deployment_name=self.deployment_name,
                 temperature=t,
+                max_tokens=self.max_tokens
         )
     
     def create_embeddings(self,chunk_size=1):
@@ -120,45 +122,57 @@ class PromptChroma:
     do documento que será utilizado para realizar a busca.
     """
     def __init__(self):
-        self.template=None
         self.prompt=None
         self.loader=None
         self.pages=None
-        self.text
+        self.chunks=None
+        
 
     def create_prompt(self) -> PromptTemplate:
         """Cria o prompt a partir do template."""  
         template = """Você é um agente de IA que deve auxiliar as dúvidas das pessoas com suas dúvidas. Responda as pessoas sobre assuntos relacionados a containers e docker.\
               Responda as perguntas sempre em português. Caso não consiga responder, responda com "Eu não sei".
         chat_history = {chat_history}
+        context = {context}
         Human: {query}
-        Context: {contexto}
         Answer:"""
 
-        prompt = PromptTemplate(template=template,input_variables=['chat_history','query','contexto'])
+        prompt = PromptTemplate(template=template,input_variables=['chat_history','query','context'])
         self.prompt=prompt
         return self.prompt
 
-    def create_pages(self,caminho_arquivo):
-        """Carrega e divide o documento."""
+    def create_chunks(self,caminho_arquivo):
+        """Carrega e divide o documento. Cria chunks a partir do loader."""
         self.loader=PdfReader(caminho_arquivo)
-        self.text = ""
+        text = ""
         for page in self.loader.pages:
-            self.text += page.extract_text()
-        return self.text
-    
-    def create_chunks(self,text):
-        """Cria chunks a partir do loader."""
-        self.text_splitter = CharacterTextSplitter(
+            text += page.extract_text()
+        
+        text_splitter = RecursiveCharacterTextSplitter(
             
             chunk_size=1000,
             chunk_overlap=200,
             length_function=len
         )
 
-        self.chunks = self.text_splitter.split_text(text)
+        self.chunks = text_splitter.split_text(text)
 
         return self.chunks
+
+    
+
+#    def create_chunks(self,text):
+        """Cria chunks a partir do loader."""
+ #       self.text_splitter = CharacterTextSplitter(
+            
+  #          chunk_size=1000,
+   #         chunk_overlap=200,
+    #        length_function=len
+     #   )
+
+      #  self.chunks = self.text_splitter.split_text(text)
+
+       # return self.chunks
     
 
 class VectorStoreMemory():
@@ -168,7 +182,7 @@ class VectorStoreMemory():
     """
     def __init__(self):
         self.db = None
-        self.contexto = None
+        self.context = None
         self.memory = None
         self.cache = None
 
@@ -178,24 +192,24 @@ class VectorStoreMemory():
 
         return self.llm_cache
 
-    def input_Chroma(self,chunks,llm_embeddings):
+    def input_Chroma(self,chunks,embeddings,cache):
         """Cria o vector store a partir do loader."""
-        self.db = Chroma.from_texts(texts=chunks,embedding=llm_embeddings,cache=self.llm_cache)
+        self.db = Chroma.from_texts(texts=chunks,embedding=embeddings,cache=cache)
 
         return self.db
 
     def input_memory(self,db,query):
         """Cria o vector store a partir do loader."""
 
-        self.contexto = db.similarity_search(query,k=2)
+        self.context = db.similarity_search(query,k=1)
 
         self.memory = ConversationBufferMemory(
             chat_memory = FileChatMessageHistory(file_path="historic_json/messages.json"),
-            k=2,
             memory_key="chat_history",
             input_key="query",
-            contexto=self.contexto,
+            contexto=self.context,
             return_messages=True
         )
 
-        return self.contexto,self.memory
+        return self.context,self.memory
+    

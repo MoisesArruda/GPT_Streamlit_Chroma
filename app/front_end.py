@@ -1,6 +1,6 @@
 #%%
 import streamlit as st
-from app.gpt_chat import gpt_input,gpt_anwser
+from gpt_chat import gpt_input,gpt_anwser
 
 def front_end():
 
@@ -47,4 +47,4 @@ def front_end():
         new_ai_message = {"role":"assistant","content":ai_response}
         st.session_state.messages.append(new_ai_message)
 
-#front_end()
+front_end()
